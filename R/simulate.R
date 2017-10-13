@@ -10,7 +10,8 @@ simulate <- function(pfrac, nfrac, logfc, alpha, p, n, model, B, ncore)
 
         loopfunc <- function(b)
         {
-            x <- RcppZiggurat::zrnormLZLLV(n[i]*p)
+            ## x <- RcppZiggurat::zrnormLZLLV(n[i]*p)
+            x <- nrorm(n[i]*p)
             keep <- integer(p)
 
             if (model$parametric) {
