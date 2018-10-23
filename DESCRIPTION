@@ -1,11 +1,11 @@
 Package: ncells
 Type: Package
 Title: Sample size calculation in single cell RNA-seq experiment
-Version: 0.1.0
+Version: 0.2.0
 Author: Kyung In Kim <kimkyungin@gmail.com>
 Maintainer: Kyung In Kim <kimkyungin@gmail.com>
 Description: Calculation of number of cells to identify a novel
         subpopulation in single cell RNA-seq experiment
-Imports: irlba, parallel
+Imports: RcppZiggurat, irlba, parallel
 License: MIT
 LazyData: TRUE
