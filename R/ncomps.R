@@ -1,4 +1,4 @@
-#' @title Estimate power (probability of success separation) in two population model
+#' @title Estimate the number of principal components in two population model
 #'
 #' @param m1 Fraction of marker genes, 0.1 <= \code{m1} <= 10
 #' @param pi1 Percentage of the novel type of cells, 5 <= \code{pi1} <= 50
@@ -9,24 +9,20 @@
 #' @param mu Either \code{p} dimensional mean gene expression vector or mean of mean gene expressions (hyperparameter). If supplied by a \code{p} vector, the mean and standard deviation of mean gene expressions are estimated. If supplied by a number, it is regarded as the mean of mean expression vectors. defualt is 1.
 #' @param sigma Standard deviation of mean gene expressions (hyperparameter), default 5
 #' @param seed Random seed, default 123
-#' @param B Number of replicates to estiamte the probability of success separation, default 1000, 100 <= \code{B}
-#' @param ncore Number of cores for use in the simulation using \code{\link{parallel}} package. default is 1, 1 <= \code{ncore} <= \code{parallel::detectCores()} 
 #' @export
 #' @return Vector of estiamted probabilities of same length as \code{n}
 #' @examples \dontrun{
 #' ncells(m1=1.6, pi1=5, foldchange=4, dropout=.6, p=20000, mu=1, sigma=5)
 #' }
-ncells <- function(m1, pi1, foldchange, dropout, p=26616, n=seq(100,1000,by=100), mu=1, sigma=5, seed=123, B=1000, ncore=1)
+ncomps <- function(m1, pi1, foldchange, dropout, p=26616, mu=1, sigma=5, seed=123)
 {
     stopifnot(5000 <= p)
     stopifnot(0.1 <= m1 && m1 <= 10)
-    stopifnot(50 <= min(n) && max(n) <= 1000000)
     stopifnot(5 <= pi1 && pi1 <= 50)
     stopifnot(1 <= foldchange && foldchange <= 32)
     stopifnot(0.6 <= dropout && dropout <= 0.999)
+    stopifnot(0 <= mu)
     stopifnot(0 <= sigma)
-    stopifnot(100 <= B)
-    stopifnot(1 <= ncore && ncore <= parallel::detectCores())
 
     pfrac <- m1/100
     nfrac <- pi1/100
@@ -34,7 +30,7 @@ ncells <- function(m1, pi1, foldchange, dropout, p=26616, n=seq(100,1000,by=100)
     alpha <- dropout/(1-dropout)
     
     set.seed(seed)
-    
+
     model <- list()
     if (length(mu) == p) {
         ## Mean and SD of prior aere estimated from the specified mu vector
@@ -52,10 +48,35 @@ ncells <- function(m1, pi1, foldchange, dropout, p=26616, n=seq(100,1000,by=100)
     } else {
         stop("length of 'mu' should equal to 'p' or 1")
     }
-    
-    mat <- simulate(pfrac, nfrac, logfc, alpha, p, n, model, B, ncore)
 
-    return(mat)
+    F <- function(y) (1-nfrac*pfrac)*pnorm(y,mean=mu,sd=sqrt(sigma^2+1)) + nfrac*pfrac*pnorm(y,mean=mu+logfc,sd=sqrt(sigma^2+1))
+    f <- function(x) return(function(y) dnorm(y,mean=x,sd=1))
+    g <- function(x) return(function(y) y*F(y)^alpha*f(x)(y))
+    h <- function(x) return(function(y) y^2*F(y)^alpha*f(x)(y))
+
+    mu0 <- model$muvec
+    d0 <- numeric(p)
+    v0 <- numeric(p)
+    for (i in 1:p) {
+        d0[i] <- integrate(g(mu0[i]),-Inf,Inf)$value
+        v0[i] <- integrate(h(mu0[i]),-Inf,Inf)$value - d0[i]^2
+    }
+
+    mu1 <- mu0
+    d1 <- d0
+    v1 <- v0
+    pos <- 1:round(p*pfrac)
+    mu1[pos] <- mu1[pos] + logfc
+    for (i in pos) {
+        d1[i] <- integrate(g(mu1[i]),-Inf,Inf)$value
+        v1[i] <- integrate(h(mu1[i]),-Inf,Inf)$value - d1[i]^2
+    }
+
+    lambda1 <- svd((1-nfrac)*nfrac*tcrossprod(d1[pos]-d0[pos])+diag((1-nfrac)*v0[pos]+nfrac*v1[pos]))$d[1]
+    lambda2 <- (1-nfrac)*v0[-pos] + nfrac*v1[-pos]
+    ncomp <- sum(lambda2 > lambda1) + 1
+
+    return(ncomp)
 }
 
 
