@@ -52,6 +52,8 @@ ncells <- function(m1, pi1, foldchange, dropout, p=26616, n=seq(100,1000,by=100)
     } else {
         stop("length of 'mu' should equal to 'p' or 1")
     }
+
+    set.seed(m1+pi1+foldchange+dropout+p+mu+sigma)
     
     mat <- simulate(pfrac, nfrac, logfc, alpha, p, n, model, B, ncore)
 
