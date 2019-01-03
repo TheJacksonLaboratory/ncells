@@ -8,6 +8,8 @@
 #' @param n Vector of total number of cells, 50 <= min(n), max(n) <= 1000000
 #' @param mu Either \code{p} dimensional mean gene expression vector or mean of mean gene expressions (hyperparameter). If supplied by a \code{p} vector, the mean and standard deviation of mean gene expressions are estimated. If supplied by a number, it is regarded as the mean of mean expression vectors. defualt is 1.
 #' @param sigma Standard deviation of mean gene expressions (hyperparameter), default 5
+#' @param type1 Type 1 error rate, default 0.05
+#' @param dfactor Cutoff values to declare separation, depends on type 1 error rate
 #' @param seed Random seed, default 123
 #' @param B Number of replicates to estiamte the probability of success separation, default 1000, 100 <= \code{B}
 #' @param ncore Number of cores for use in the simulation using \code{\link{parallel}} package. default is 1, 1 <= \code{ncore} <= \code{parallel::detectCores()} 
@@ -16,7 +18,7 @@
 #' @examples \dontrun{
 #' ncells(m1=1.6, pi1=5, foldchange=4, dropout=.6, p=20000, mu=1, sigma=5)
 #' }
-ncells <- function(m1, pi1, foldchange, dropout, p=26616, n=seq(100,1000,by=100), mu=1, sigma=5, seed=123, B=1000, ncore=1)
+ncells <- function(m1, pi1, foldchange, dropout, p=20000, n=seq(100,1000,by=100), mu=1, sigma=5, type1=0.05, dfactor, seed=123, B=1000, ncore=1)
 {
     stopifnot(5000 <= p)
     stopifnot(0.1 <= m1 && m1 <= 10)
@@ -53,11 +55,38 @@ ncells <- function(m1, pi1, foldchange, dropout, p=26616, n=seq(100,1000,by=100)
         stop("length of 'mu' should equal to 'p' or 1")
     }
 
-    set.seed(m1+pi1+foldchange+dropout+p+mu+sigma)
-    
-    mat <- simulate(pfrac, nfrac, logfc, alpha, p, n, model, B, ncore)
-
-    return(mat)
+    spooled <- function(s0, s1, n0, n1) return(sqrt((s0^2*(n0-1) + s1^2*(n1-1))/(n0+n1-2)))
+    if (!missing(dfactor) && foldchange > 1) { ## non-null model
+        if (length(dfactor) != length(n)) {
+            stop("length of argument 'dfactor' does not match")
+        }
+        set.seed(m1+pi1+foldchange+dropout+p+mu+sigma)
+        res <- simulate(pfrac, nfrac, logfc, alpha, p, n, model, B, ncore)
+        rate <- numeric(length(n))
+        names(rate) <- dimnames(res)[[3]]
+        for (m in 1:length(n)) {
+            x <- res[,,m]
+            rate[m] <- mean(abs(x[,"m0"]-x[,"m1"]) > dfactor[m]*spooled(x[,"s0"],x[,"s1"],(1-pi1/100)*n[m],pi1/100*n[m]))
+        }
+        return(rate)
+    } else if (foldchange ==  1) { ## null model
+        set.seed(m1+pi1+foldchange+dropout+p+mu+sigma)
+        res <- simulate(pfrac, nfrac, logfc, alpha, p, n, model, B, ncore)
+        dfactor <- numeric(length(n))
+        names(dfactor) <- dimnames(res)[[3]]
+        for (m in 1:length(n)) {
+            x <- res[,,m]
+            r <- abs(x[,"m0"]-x[,"m1"])/spooled(x[,"s0"],x[,"s1"],(1-pi1/100)*n[m],pi1/100*n[m])    
+            w <- seq(0, max(r), by=0.01)
+            fw <- sapply(w, function(x) mean(r > x))
+            g <- splinefun(x=w, y=fw, method="monoH.FC")
+            h <- function(x) g(x) - type1
+            dfactor[m] <- uniroot(h, interval=c(0,max(r)))$root
+        }
+        return(dfactor)
+    } else {
+        stop("Cutoff values ('dfactor') are missing")
+    }
 }
 
 
